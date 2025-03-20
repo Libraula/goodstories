@@ -242,8 +242,8 @@ export default function Home() {
   return (
   <>
   <Head>
-    <title>Gemini Co-Drawing</title>
-    <meta name="description" content="Gemini Co-Drawing" />
+    <title>Good Stories</title>
+    <meta name="description" content="Good Stories" />
     <link rel="icon" href="/favicon.ico" />
   </Head>
   <div className="min-h-screen notebook-paper-bg text-gray-900 flex flex-col justify-start items-center">     
@@ -252,13 +252,13 @@ export default function Home() {
         {/* Header section with title and tools */}
         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-4 sm:mb-6 gap-3">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold mb-0 leading-tight font-mega">Gemini Co-Drawing</h1>
-            <p className="text-sm sm:text-base text-gray-500 mt-1">
+            <h1 className="text-2xl sm:text-3xl font-bold mb-0 leading-tight font-mega">Good Stories</h1>
+            {/* <p className="text-sm sm:text-base text-gray-500 mt-1">
             Built with{" "}
               <a className="underline" href="https://ai.google.dev/gemini-api/docs/image-generation" target="_blank" rel="noopener noreferrer">
                  Gemini 2.0 native image generation
               </a>
-            </p>
+            </p> */}
           </div>
           
           <menu className="flex items-center bg-gray-300 rounded-full p-2 shadow-sm self-start sm:self-auto">

@@ -1,5 +1,5 @@
 ---
-title: Gemini Co-Drawing
+title: Good Stories
 emoji: ✏️
 colorFrom: blue
 colorTo: purple
@@ -10,7 +10,7 @@ app_port: 3000
 short_description: 'Gemini 2.0 native image generation co-doodling'
 ---
 
-# Gemini Co-Drawing
+# Good Stories
 
 A collaborative drawing application powered by Google's Gemini 2.0 API for image generation. This app allows users to create drawings and have Gemini enhance or add to them based on text prompts.
 
