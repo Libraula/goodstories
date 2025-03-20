@@ -1,0 +1,12 @@
+service: co-drawing
+env: standard
+runtime: nodejs20
+
+handlers:
+  - url: /.*
+    secure: always
+    script: auto
+
+env_variables:
+  GEMINI_API_KEY: "AIzaSyAVub03nGqao06vXO_bCAlBVrU1Sc-Y91U"
+  GCP_CLIENT_EMAIL: "brianotweyo@gmail.com"
