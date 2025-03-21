@@ -1,339 +1,366 @@
-import { useState, useRef, useEffect } from "react";
-import { SendHorizontal, LoaderCircle, Trash2 } from "lucide-react";
+import { useState, useEffect } from "react";
+import { ChevronLeft, ChevronRight, RefreshCw, BookOpen } from "lucide-react";
 import Head from "next/head";
 
-export default function Home() {
-  const canvasRef = useRef(null);
-  const backgroundImageRef = useRef(null);
-  const [isDrawing, setIsDrawing] = useState(false);
-  const [penColor, setPenColor] = useState("#000000");
-  const colorInputRef = useRef(null);
-  const [prompt, setPrompt] = useState("");
-  const [generatedImage, setGeneratedImage] = useState(null);
-  const [isLoading, setIsLoading] = useState(false);
-
-  // Load background image when generatedImage changes
-  useEffect(() => {
-    if (generatedImage && canvasRef.current) {
-      // Use the window.Image constructor to avoid conflict with Next.js Image component
-      const img = new window.Image();
-      img.onload = () => {
-        backgroundImageRef.current = img;
-        drawImageToCanvas();
-      };
-      img.src = generatedImage;
-    }
-  }, [generatedImage]);
-
-  // Initialize canvas with white background when component mounts
-  useEffect(() => {
-    if (canvasRef.current) {
-      initializeCanvas();
-    }
-  }, []);
-
-  // Initialize canvas with white background
-  const initializeCanvas = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    
-    // Fill canvas with white background
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
+export async function getServerSideProps() {
+  const res = await fetch("http://localhost:3000/api/reddit-prompts");
+  const data = await res.json();
+  return {
+    props: {
+      initialPrompts: data.prompts || [],
+    },
   };
+}
 
-  // Draw the background image to the canvas
-  const drawImageToCanvas = () => {
-    if (!canvasRef.current || !backgroundImageRef.current) return;
-    
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    
-    // Fill with white background first
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    // Draw the background image
-    ctx.drawImage(
-      backgroundImageRef.current,
-      0, 0,
-      canvas.width, canvas.height
-    );
-  };
+export default function Home({ initialPrompts }) {
+  const [prompts, setPrompts] = useState(initialPrompts);
+  const [selectedPrompt, setSelectedPrompt] = useState(null);
+  const [storyPages, setStoryPages] = useState([]);
+  const [pageImages, setPageImages] = useState([]);
+  const [currentPage, setCurrentPage] = useState(0);
+  const [isLoadingStory, setIsLoadingStory] = useState(false);
+  const [isLoadingImage, setIsLoadingImage] = useState(false);
+  const [currentPromptPage, setCurrentPromptPage] = useState(0);
+  const [isLoadingMorePrompts, setIsLoadingMorePrompts] = useState(false);
 
-  // Get the correct coordinates based on canvas scaling
-  const getCoordinates = (e) => {
-    const canvas = canvasRef.current;
-    const rect = canvas.getBoundingClientRect();
-    
-    // Calculate the scaling factor between the internal canvas size and displayed size
-    const scaleX = canvas.width / rect.width;
-    const scaleY = canvas.height / rect.height;
-    
-    // Apply the scaling to get accurate coordinates
-    return {
-      x: (e.nativeEvent.offsetX || (e.nativeEvent.touches?.[0]?.clientX - rect.left)) * scaleX,
-      y: (e.nativeEvent.offsetY || (e.nativeEvent.touches?.[0]?.clientY - rect.top)) * scaleY
-    };
-  };
+  const PROMPTS_PER_PAGE = 12;
+  const totalPromptPages = Math.ceil(prompts.length / PROMPTS_PER_PAGE);
+  const displayedPrompts = prompts.slice(
+    currentPromptPage * PROMPTS_PER_PAGE,
+    (currentPromptPage + 1) * PROMPTS_PER_PAGE
+  );
 
-  const startDrawing = (e) => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    const { x, y } = getCoordinates(e);
-    
-    // Prevent default behavior to avoid scrolling on touch devices
-    if (e.type === 'touchstart') {
-      e.preventDefault();
-    }
-    
-    // Start a new path without clearing the canvas
-    ctx.beginPath();
-    ctx.moveTo(x, y);
-    setIsDrawing(true);
-  };
+  const loadMorePrompts = async () => {
+    if (isLoadingMorePrompts) return;
 
-  const draw = (e) => {
-    if (!isDrawing) return;
-    
-    // Prevent default behavior to avoid scrolling on touch devices
-    if (e.type === 'touchmove') {
-      e.preventDefault();
-    }
-    
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    const { x, y } = getCoordinates(e);
-    
-    ctx.lineWidth = 5;
-    ctx.lineCap = "round";
-    ctx.strokeStyle = penColor;
-    ctx.lineTo(x, y);
-    ctx.stroke();
-  };
-
-  const stopDrawing = () => {
-    setIsDrawing(false);
-  };
-
-  const clearCanvas = () => {
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    
-    // Fill with white instead of just clearing
-    ctx.fillStyle = "#FFFFFF";
-    ctx.fillRect(0, 0, canvas.width, canvas.height);
-    
-    setGeneratedImage(null);
-    backgroundImageRef.current = null;
-  };
-
-  const handleColorChange = (e) => {
-    setPenColor(e.target.value);
-  };
-
-  const openColorPicker = () => {
-    if (colorInputRef.current) {
-      colorInputRef.current.click();
-    }
-  };
-
-  const handleKeyDown = (e) => {
-    if (e.key === 'Enter' || e.key === ' ') {
-      openColorPicker();
-    }
-  };
-
-  const handleSubmit = async (e) => {
-    e.preventDefault();
-    
-    if (!canvasRef.current) return;
-    
-    setIsLoading(true);
-    
+    setIsLoadingMorePrompts(true);
     try {
-      // Get the drawing as base64 data
-      const canvas = canvasRef.current;
-      
-      // Create a temporary canvas to add white background
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = canvas.width;
-      tempCanvas.height = canvas.height;
-      const tempCtx = tempCanvas.getContext('2d');
-      
-      // Fill with white background
-      tempCtx.fillStyle = '#FFFFFF';
-      tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-      
-      // Draw the original canvas content on top of the white background
-      tempCtx.drawImage(canvas, 0, 0);
-      
-      const drawingData = tempCanvas.toDataURL("image/png").split(",")[1];
-      
-      // Create request payload
-      const requestPayload = {
-        prompt,
-        drawingData
-      };
-      
-      // Log the request payload (without the full image data for brevity)
-      console.log("Request payload:", {
-        ...requestPayload,
-        drawingData: drawingData ? `${drawingData.substring(0, 50)}... (truncated)` : null
-      });
-      
-      // Send the drawing and prompt to the API
+      const response = await fetch(`/api/reddit-prompts?page=${currentPromptPage + 1}`);
+      const data = await response.json();
+
+      if (data.success && data.prompts.length > 0) {
+        setPrompts((prevPrompts) => {
+          const newPrompts = data.prompts.filter(
+            (newPrompt) => !prevPrompts.some((p) => p.id === newPrompt.id)
+          );
+          return [...prevPrompts, ...newPrompts];
+        });
+      }
+    } catch (error) {
+      console.error("Error loading more prompts:", error);
+    } finally {
+      setIsLoadingMorePrompts(false);
+    }
+  };
+
+  const nextPromptPage = () => {
+    if (currentPromptPage < totalPromptPages - 1) {
+      setCurrentPromptPage((prev) => prev + 1);
+      if ((currentPromptPage + 1) * PROMPTS_PER_PAGE >= prompts.length - PROMPTS_PER_PAGE) {
+        loadMorePrompts();
+      }
+    }
+  };
+
+  const prevPromptPage = () => {
+    if (currentPromptPage > 0) {
+      setCurrentPromptPage((prev) => prev - 1);
+    }
+  };
+
+  const handlePromptSelect = async (prompt) => {
+    setSelectedPrompt(prompt);
+    setIsLoadingStory(true);
+
+    try {
       const response = await fetch("/api/generate", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(requestPayload),
+        body: JSON.stringify({
+          prompt: prompt.title,
+        }),
       });
-      
+
       const data = await response.json();
-      
-      // Log the response (without the full image data for brevity)
-      console.log("Response:", {
-        ...data,
-        imageData: data.imageData ? `${data.imageData.substring(0, 50)}... (truncated)` : null
-      });
-      
-      if (data.success && data.imageData) {
-        const imageUrl = `data:image/png;base64,${data.imageData}`;
-        setGeneratedImage(imageUrl);
+
+      if (data.success && data.storyPages) {
+        setStoryPages(data.storyPages);
+        setPageImages(Array(data.storyPages.length).fill(null));
+        setCurrentPage(0);
       } else {
-        console.error("Failed to generate image:", data.error);
-        alert("Failed to generate image. Please try again.");
+        console.error("Failed to generate story:", data.error);
+        alert("Failed to generate story. Please try again.");
       }
     } catch (error) {
-      console.error("Error submitting drawing:", error);
+      console.error("Error generating story:", error);
       alert("An error occurred. Please try again.");
     } finally {
-      setIsLoading(false);
+      setIsLoadingStory(false);
     }
   };
 
-  // Add touch event prevention function
-  useEffect(() => {
-    // Function to prevent default touch behavior on canvas
-    const preventTouchDefault = (e) => {
-      if (isDrawing) {
-        e.preventDefault();
-      }
-    };
+  const fetchImageForPage = async (pageIndex) => {
+    if (pageImages[pageIndex] || isLoadingImage) return;
 
-    // Add event listener when component mounts
-    const canvas = canvasRef.current;
-    if (canvas) {
-      canvas.addEventListener('touchstart', preventTouchDefault, { passive: false });
-      canvas.addEventListener('touchmove', preventTouchDefault, { passive: false });
+    setIsLoadingImage(true);
+    try {
+      const response = await fetch("/api/generate-image", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          pageText: storyPages[pageIndex],
+        }),
+      });
+
+      const data = await response.json();
+      if (data.success && data.imageData) {
+        setPageImages((prev) => {
+          const newImages = [...prev];
+          newImages[pageIndex] = data.imageData;
+          return newImages;
+        });
+      } else {
+        console.error("Failed to generate image:", data.error);
+      }
+    } catch (error) {
+      console.error("Error generating image:", error);
+    } finally {
+      setIsLoadingImage(false);
     }
+  };
 
-    // Remove event listener when component unmounts
-    return () => {
-      if (canvas) {
-        canvas.removeEventListener('touchstart', preventTouchDefault);
-        canvas.removeEventListener('touchmove', preventTouchDefault);
+  useEffect(() => {
+    if (storyPages.length > 0 && currentPage >= 0) {
+      fetchImageForPage(currentPage);
+    }
+  }, [currentPage, storyPages]);
+
+  const refreshPrompts = async () => {
+    setIsLoadingStory(true);
+    try {
+      const response = await fetch("/api/reddit-prompts?refresh=true");
+      const data = await response.json();
+
+      if (data.success) {
+        setPrompts(data.prompts);
+        setCurrentPromptPage(0);
       }
-    };
-  }, [isDrawing]);
+    } catch (error) {
+      console.error("Error refreshing prompts:", error);
+    } finally {
+      setIsLoadingStory(false);
+    }
+  };
+
+  const goToNextPage = () => {
+    if (currentPage < storyPages.length - 1) {
+      setCurrentPage(currentPage + 1);
+    }
+  };
+
+  const goToPreviousPage = () => {
+    if (currentPage > 0) {
+      setCurrentPage(currentPage - 1);
+    }
+  };
+
+  const backToPrompts = () => {
+    setSelectedPrompt(null);
+    setStoryPages([]);
+    setPageImages([]);
+    setCurrentPage(0);
+  };
 
   return (
-  <>
-  <Head>
-    <title>Good Stories</title>
-    <meta name="description" content="Good Stories" />
-    <link rel="icon" href="/favicon.ico" />
-  </Head>
-  <div className="min-h-screen notebook-paper-bg text-gray-900 flex flex-col justify-start items-center">     
-      
-      <main className="container mx-auto px-3 sm:px-6 py-5 sm:py-10 pb-32 max-w-5xl w-full">
-        {/* Header section with title and tools */}
-        <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end mb-4 sm:mb-6 gap-3">
-          <div>
-            <h1 className="text-2xl sm:text-3xl font-bold mb-0 leading-tight font-mega">Good Stories</h1>
-            {/* <p className="text-sm sm:text-base text-gray-500 mt-1">
-            Built with{" "}
-              <a className="underline" href="https://ai.google.dev/gemini-api/docs/image-generation" target="_blank" rel="noopener noreferrer">
-                 Gemini 2.0 native image generation
-              </a>
-            </p> */}
+    <>
+      <Head>
+        <title>Good Stories</title>
+        <meta name="description" content="Generate stories from Reddit writing prompts" />
+        <link rel="icon" href="/favicon.ico" />
+      </Head>
+      <div className="min-h-screen bg-gradient-to-br from-gray-50 to-gray-100 text-gray-900 font-sans">
+        <header className="bg-white shadow-sm py-4 sticky top-0 z-10 backdrop-blur-md bg-white/90">
+          <div className="container mx-auto px-4 flex items-center justify-between">
+            <h1 className="text-2xl sm:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600">
+              Good Stories
+            </h1>
+            {!selectedPrompt && (
+              <button
+                onClick={refreshPrompts}
+                disabled={isLoadingStory}
+                className="flex items-center bg-indigo-600 text-white px-3 py-1.5 rounded-full hover:bg-indigo-700 transition-all disabled:bg-indigo-400 text-sm shadow-md disabled:shadow-none"
+              >
+                <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoadingStory ? "animate-spin" : ""}`} />
+                Refresh
+              </button>
+            )}
+            {selectedPrompt && (
+              <button
+                onClick={backToPrompts}
+                className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
+              >
+                <ChevronLeft className="w-5 h-5 mr-1" />
+                All Prompts
+              </button>
+            )}
           </div>
-          
-          <menu className="flex items-center bg-gray-300 rounded-full p-2 shadow-sm self-start sm:self-auto">
-            <button 
-              type="button"
-              className="w-10 h-10 rounded-full overflow-hidden mr-2 flex items-center justify-center border-2 border-white shadow-sm transition-transform hover:scale-110"
-              onClick={openColorPicker}
-              onKeyDown={handleKeyDown}
-              aria-label="Open color picker"
-              style={{ backgroundColor: penColor }}
-            >
-              <input
-                ref={colorInputRef}
-                type="color"
-                value={penColor}
-                onChange={handleColorChange}
-                className="opacity-0 absolute w-px h-px"
-                aria-label="Select pen color"
-              />
-            </button>
-            <button
-              type="button"
-              onClick={clearCanvas}
-              className="w-10 h-10 rounded-full flex items-center justify-center bg-white shadow-sm transition-all hover:bg-gray-50 hover:scale-110"
-            >
-              <Trash2 className="w-5 h-5 text-gray-700" aria-label="Clear Canvas" />
-            </button>
-          </menu>
-        </div>
-        
-        {/* Canvas section with notebook paper background */}
-        <div className="w-full mb-6">
-    
-              <canvas
-                ref={canvasRef}
-                width={960}
-                height={540}
-                onMouseDown={startDrawing}
-                onMouseMove={draw}
-                onMouseUp={stopDrawing}
-                onMouseLeave={stopDrawing}
-                onTouchStart={startDrawing}
-                onTouchMove={draw}
-                onTouchEnd={stopDrawing}
-                className="border-2 border-black w-full  hover:cursor-crosshair sm:h-[60vh]
-                h-[30vh] min-h-[320px] bg-white/90 touch-none"
-              />
-        </div>
-        
-        {/* Input form that matches canvas width */}
-        <form onSubmit={handleSubmit} className="w-full">
-          <div className="relative">
-            <input
-              type="text"
-              value={prompt}
-              onChange={(e) => setPrompt(e.target.value)}
-              placeholder="Add your change..."
-              className="w-full p-3 sm:p-4 pr-12 sm:pr-14 text-sm sm:text-base border-2 border-black bg-white text-gray-800 shadow-sm focus:ring-2 focus:ring-gray-200 focus:outline-none transition-all font-mono"
-              required
-            />
-            <button
-              type="submit"
-              disabled={isLoading}
-              className="absolute right-3 sm:right-4 top-1/2 -translate-y-1/2 p-1.5 sm:p-2 rounded-none bg-black text-white hover:cursor-pointer hover:bg-gray-800 disabled:bg-gray-300 disabled:cursor-not-allowed transition-colors"
-            >
-              {isLoading ? (
-                <LoaderCircle className="w-5 sm:w-6 h-5 sm:h-6 animate-spin" aria-label="Loading" />
-              ) : (
-                <SendHorizontal className="w-5 sm:w-6 h-5 sm:h-6" aria-label="Submit" />
+        </header>
+
+        <main className="container mx-auto px-4 py-8 max-w-7xl">
+          {!selectedPrompt ? (
+            <>
+              <div className="mb-8">
+                <h2 className="text-xl font-semibold text-gray-800 mb-1">Writing Prompts</h2>
+                <p className="text-gray-500 text-sm">Select a prompt to generate a story</p>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-5 mb-10">
+                {displayedPrompts.map((prompt) => (
+                  <button
+                    key={prompt.id}
+                    onClick={() => handlePromptSelect(prompt)}
+                    className="bg-white p-5 rounded-xl shadow-sm hover:shadow-md transition-all duration-300 border border-gray-100 text-left h-full flex flex-col group transform hover:-translate-y-1"
+                  >
+                    <div className="w-full h-40 bg-gradient-to-br from-indigo-400 via-purple-500 to-indigo-600 rounded-lg mb-4 flex items-center justify-center text-white relative overflow-hidden">
+                      <div className="absolute inset-0 bg-black/10 group-hover:bg-black/0 transition-all duration-300"></div>
+                      <BookOpen className="w-12 h-12 opacity-70 group-hover:opacity-100 transition-all duration-300" />
+                    </div>
+                    <h3 className="font-medium line-clamp-3 flex-grow text-gray-800 group-hover:text-indigo-700 transition-colors">
+                      {prompt.title}
+                    </h3>
+                    <p className="text-xs text-gray-400 mt-3 font-medium">Reddit r/WritingPrompts</p>
+                  </button>
+                ))}
+              </div>
+
+              {prompts.length > PROMPTS_PER_PAGE && (
+                <div className="flex justify-center items-center gap-4 mt-6 mb-12">
+                  <button
+                    onClick={prevPromptPage}
+                    disabled={currentPromptPage === 0}
+                    className="p-2 bg-white rounded-full shadow-sm disabled:opacity-50 hover:bg-gray-50 transition-colors border border-gray-100 disabled:border-gray-50"
+                    aria-label="Previous page"
+                  >
+                    <ChevronLeft className="w-5 h-5 text-gray-700" />
+                  </button>
+                  <span className="text-sm font-medium text-gray-700">
+                    Page {currentPromptPage + 1} of {totalPromptPages}
+                  </span>
+                  <button
+                    onClick={nextPromptPage}
+                    disabled={currentPromptPage >= totalPromptPages - 1 && !isLoadingMorePrompts}
+                    className="p-2 bg-white rounded-full shadow-sm disabled:opacity-50 hover:bg-gray-50 transition-colors border border-gray-100 disabled:border-gray-50"
+                    aria-label="Next page"
+                  >
+                    <ChevronRight className="w-5 h-5 text-gray-700" />
+                  </button>
+                </div>
               )}
-            </button>
-          </div>
-        </form>
-      </main>
-    </div>
+            </>
+          ) : (
+            <div className="max-w-5xl mx-auto">
+              {isLoadingStory ? (
+                <div className="flex flex-col items-center justify-center h-96 bg-white rounded-2xl shadow-sm">
+                  <div className="w-16 h-16 border-4 border-t-indigo-500 border-indigo-100 rounded-full animate-spin mb-6"></div>
+                  <p className="text-gray-600 font-medium">Crafting your story...</p>
+                  <p className="text-gray-400 text-sm mt-2">This may take a moment</p>
+                </div>
+              ) : storyPages.length > 0 ? (
+                <div className="bg-white rounded-2xl shadow-md overflow-hidden">
+                  <div className="px-6 pt-6 pb-4 border-b border-gray-100">
+                    <h2 className="text-xl font-bold text-gray-800 leading-tight">{selectedPrompt.title}</h2>
+                  </div>
+                  
+                  <div className="flex flex-col md:flex-row">
+                    {/* Image column */}
+                    <div className="w-full md:w-1/2 md:border-r border-gray-100">
+                      <div className="relative aspect-square md:aspect-auto md:h-full bg-gray-50 flex items-center justify-center overflow-hidden">
+                        {pageImages[currentPage] ? (
+                          <img
+                            src={pageImages[currentPage]}
+                            alt={`Illustration for page ${currentPage + 1}`}
+                            className="w-full h-full object-contain"
+                          />
+                        ) : isLoadingImage ? (
+                          <div className="w-full h-full bg-gradient-to-br from-gray-50 to-gray-100 flex flex-col items-center justify-center text-gray-400 p-8">
+                            <div className="w-10 h-10 border-3 border-t-indigo-400 border-indigo-100 rounded-full animate-spin mb-4"></div>
+                            <p className="text-center text-gray-500 font-medium">Creating illustration...</p>
+                          </div>
+                        ) : (
+                          <div className="w-full h-full bg-gradient-to-br from-gray-50 to-gray-100 flex items-center justify-center text-gray-400 p-8">
+                            <p className="text-center font-medium text-gray-400">Illustration will appear here</p>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                    
+                    {/* Text column */}
+                    <div className="w-full md:w-1/2 flex flex-col">
+                      <div className="px-6 py-4 text-right text-xs text-gray-400 font-medium border-b border-gray-100">
+                        Page {currentPage + 1} of {storyPages.length}
+                      </div>
+                      <div className="p-6 flex-grow overflow-y-auto max-h-96 md:max-h-[70vh]">
+                        <div className="prose prose-sm sm:prose md:prose-lg max-w-none text-gray-700 whitespace-pre-wrap leading-relaxed">
+                          {storyPages[currentPage]}
+                        </div>
+                      </div>
+                      
+                      <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50">
+                        <button
+                          onClick={goToPreviousPage}
+                          disabled={currentPage === 0}
+                          className="px-4 py-2 flex items-center disabled:opacity-40 bg-white rounded-full hover:bg-gray-50 disabled:hover:bg-white transition-colors border border-gray-200 text-gray-700 text-sm font-medium shadow-sm disabled:shadow-none"
+                        >
+                          <ChevronLeft className="w-4 h-4 mr-1" />
+                          Previous
+                        </button>
+                        
+                        <div className="hidden sm:flex items-center space-x-2">
+                          {storyPages.map((_, idx) => (
+                            <button
+                              key={idx}
+                              onClick={() => setCurrentPage(idx)}
+                              className={`w-2.5 h-2.5 rounded-full ${
+                                currentPage === idx 
+                                  ? "bg-indigo-500" 
+                                  : "bg-gray-300 hover:bg-gray-400"
+                              } transition-colors`}
+                              aria-label={`Go to page ${idx + 1}`}
+                            />
+                          ))}
+                        </div>
+                        
+                        <button
+                          onClick={goToNextPage}
+                          disabled={currentPage === storyPages.length - 1}
+                          className="px-4 py-2 flex items-center disabled:opacity-40 bg-white rounded-full hover:bg-gray-50 disabled:hover:bg-white transition-colors border border-gray-200 text-gray-700 text-sm font-medium shadow-sm disabled:shadow-none"
+                        >
+                          Next
+                          <ChevronRight className="w-4 h-4 ml-1" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="bg-white p-8 rounded-2xl shadow-sm text-center">
+                  <p className="text-gray-600">No story generated yet. Please try another prompt.</p>
+                  <button
+                    onClick={backToPrompts}
+                    className="mt-4 px-4 py-2 bg-indigo-600 text-white rounded-full hover:bg-indigo-700 transition-colors text-sm font-medium"
+                  >
+                    Browse Prompts
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
+        </main>
+      </div>
     </>
   );
 }

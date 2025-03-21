@@ -1,95 +1,65 @@
 import { GoogleGenerativeAI } from "@google/generative-ai";
 
 export default async function handler(req, res) {
-  // Only allow POST requests
   if (req.method !== "POST") {
     return res.status(405).json({ error: "Method not allowed" });
   }
 
-  // Get prompt and drawing from request body
-  const { prompt, drawingData } = req.body;
-
-  // Log request details (truncating drawingData for brevity)
-  console.log("API Request:", {
-    prompt,
-    hasDrawingData: !!drawingData,
-    drawingDataLength: drawingData ? drawingData.length : 0,
-    drawingDataSample: drawingData ? `${drawingData.substring(0, 50)}... (truncated)` : null,
-  });
+  const { prompt } = req.body;
+  console.log("API Request:", { prompt });
 
   if (!prompt) {
     return res.status(400).json({ error: "Prompt is required" });
   }
 
-  // Pass the API key directly
   const genAI = new GoogleGenerativeAI("AIzaSyAVub03nGqao06vXO_bCAlBVrU1Sc-Y91U");
 
-  // Set responseModalities to include "Image" so the model can generate an image
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash-exp-image-generation",
+    model: "gemini-1.5-flash", // Real model for text; images handled separately
     generationConfig: {
-      responseModalities: ["Text", "Image"],
+      temperature: 0.8,
+      topP: 0.95,
+      topK: 64,
+      maxOutputTokens: 8000,
     },
   });
 
   try {
-    let generationContent;
+    console.log("Generating story text...");
+    const chat = model.startChat({
+      history: [
+        { role: "user", parts: [{ text: "I want you to create a short story based on a writing prompt." }] },
+        { role: "model", parts: [{ text: "I'd be happy to create a short story based on your writing prompt. Please share the prompt with me, and I'll craft a story from it." }] },
+      ],
+    });
 
-    // If drawingData is provided, include it as an image in the request
-    if (drawingData) {
-      // Create a content part with the base64-encoded image
-      const imagePart = {
-        inlineData: {
-          data: drawingData,
-          mimeType: "image/png",
-        },
-      };
+    const storyResult = await chat.sendMessage(
+      `Based on the following writing prompt, create a short story with exactly 5 distinct sections/pages. Each page should advance the narrative and have a clear scene that could be illustrated. The complete story should have a beginning, middle, and end.
+      
+      Separate each page with the marker [PAGE_BREAK] so I can split them for display.
+      
+      Writing Prompt: ${prompt}
+      
+      Make each page approximately 200-250 words. Create a compelling narrative arc across all pages.`
+    );
 
-      // Combine drawing with text prompt
-      generationContent = [
-        imagePart,
-        { text: `${prompt}. Keep the same minimal line doodle style.` || "Add something new to this drawing, in the same style." },
-      ];
-      console.log("Using multipart content with drawing data and prompt");
-    } else {
-      // Use text-only prompt if no drawing is provided
-      generationContent = prompt;
-      console.log("Using text-only prompt");
+    const fullStory = storyResult.response.text();
+    const storyPages = fullStory.split("[PAGE_BREAK]").map((page) => page.trim());
+    const finalPages = storyPages.slice(0, 5);
+    while (finalPages.length < 5) {
+      finalPages.push("(This page is blank. The story concludes here.)");
     }
 
-    console.log("Calling Gemini API...");
-    const response = await model.generateContent(generationContent);
-    console.log("Gemini API response received");
-
-    // Initialize response data
-    const result = {
+    console.log("Sending response with", finalPages.length, "pages");
+    return res.status(200).json({
       success: true,
-      message: "",
-      imageData: null,
-    };
-
-    // Process response parts
-    for (const part of response.response.candidates[0].content.parts) {
-      // Based on the part type, either get the text or image data
-      if (part.text) {
-        result.message = part.text;
-        console.log("Received text response:", part.text);
-      } else if (part.inlineData) {
-        const imageData = part.inlineData.data;
-        console.log("Received image data, length:", imageData.length);
-
-        // Include the base64 data in the response
-        result.imageData = imageData;
-      }
-    }
-
-    console.log("Sending successful response");
-    return res.status(200).json(result);
+      storyPages: finalPages,
+    });
   } catch (error) {
-    console.error("Error generating content:", error);
+    console.error("Error generating story:", error);
     return res.status(500).json({
       success: false,
-      error: error.message || "Failed to generate image",
+      error: error.message || "Failed to generate story",
     });
   }
 }
