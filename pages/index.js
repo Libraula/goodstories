@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, RefreshCw, BookOpen } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, BookOpen, Download } from "lucide-react";
 import Head from "next/head";
+import { jsPDF } from "jspdf"; // Import jsPDF for PDF generation
 
 export async function getServerSideProps() {
   try {
@@ -171,6 +172,68 @@ export default function Home({ initialPrompts }) {
     setCurrentPage(0);
   };
 
+  const downloadStoryAsPDF = async () => {
+    const doc = new jsPDF();
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const pageHeight = doc.internal.pageSize.getHeight();
+    const margin = 20;
+    const maxWidth = pageWidth - 2 * margin;
+    let yOffset = margin;
+
+    // Add title
+    doc.setFontSize(18);
+    doc.text(selectedPrompt.title, margin, yOffset, { maxWidth });
+    yOffset += 20;
+
+    // Add each page
+    for (let i = 0; i < storyPages.length; i++) {
+      if (yOffset > pageHeight - margin) {
+        doc.addPage();
+        yOffset = margin;
+      }
+
+      // Page header
+      doc.setFontSize(12);
+      doc.text(`Page ${i + 1}`, margin, yOffset);
+      yOffset += 10;
+
+      // Add image if available
+      if (pageImages[i]) {
+        try {
+          const img = new Image();
+          img.src = pageImages[i];
+          await new Promise((resolve) => {
+            img.onload = resolve;
+          });
+          const imgProps = doc.getImageProperties(img);
+          const imgWidth = maxWidth;
+          const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+          if (yOffset + imgHeight > pageHeight - margin) {
+            doc.addPage();
+            yOffset = margin;
+          }
+          doc.addImage(img, "PNG", margin, yOffset, imgWidth, imgHeight);
+          yOffset += imgHeight + 10;
+        } catch (error) {
+          console.error("Error adding image to PDF:", error);
+        }
+      }
+
+      // Add text
+      doc.setFontSize(10);
+      const textLines = doc.splitTextToSize(storyPages[i], maxWidth);
+      if (yOffset + textLines.length * 12 > pageHeight - margin) {
+        doc.addPage();
+        yOffset = margin;
+      }
+      doc.text(textLines, margin, yOffset);
+      yOffset += textLines.length * 12 + 10;
+    }
+
+    // Save the PDF
+    doc.save(`${selectedPrompt.title.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`);
+  };
+
   return (
     <>
       <Head>
@@ -267,8 +330,15 @@ export default function Home({ initialPrompts }) {
                 </div>
               ) : storyPages.length > 0 ? (
                 <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                  <div className="px-6 pt-6 pb-4 border-b border-gray-100">
+                  <div className="px-6 pt-6 pb-4 border-b border-gray-100 flex justify-between items-center">
                     <h2 className="text-xl font-bold text-gray-800 leading-tight">{selectedPrompt.title}</h2>
+                    <button
+                      onClick={downloadStoryAsPDF}
+                      className="flex items-center bg-indigo-600 text-white px-3 py-1.5 rounded-full hover:bg-indigo-700 transition-all text-sm shadow-md"
+                    >
+                      <Download className="w-4 h-4 mr-1.5" />
+                      Download PDF
+                    </button>
                   </div>
 
                   <div className="flex flex-col md:flex-row">
