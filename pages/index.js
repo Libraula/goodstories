@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
-import { ChevronLeft, ChevronRight, RefreshCw, BookOpen, Download } from "lucide-react";
+import { ChevronLeft, ChevronRight, RefreshCw, BookOpen } from "lucide-react";
 import Head from "next/head";
-import { jsPDF } from "jspdf"; // Import jsPDF for PDF generation
+import jsPDF from "jspdf"; // Import jsPDF
 
 export async function getServerSideProps() {
   try {
@@ -172,66 +172,58 @@ export default function Home({ initialPrompts }) {
     setCurrentPage(0);
   };
 
-  const downloadStoryAsPDF = async () => {
+  const downloadAsPDF = async () => {
     const doc = new jsPDF();
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
-    const margin = 20;
-    const maxWidth = pageWidth - 2 * margin;
+    const margin = 10;
     let yOffset = margin;
 
-    // Add title
-    doc.setFontSize(18);
-    doc.text(selectedPrompt.title, margin, yOffset, { maxWidth });
+    doc.setFontSize(16);
+    doc.text(selectedPrompt.title, margin, yOffset, { align: "center", maxWidth: pageWidth - 2 * margin });
     yOffset += 20;
 
-    // Add each page
     for (let i = 0; i < storyPages.length; i++) {
-      if (yOffset > pageHeight - margin) {
-        doc.addPage();
-        yOffset = margin;
-      }
+      if (i > 0) doc.addPage();
 
-      // Page header
+      // Add page text
       doc.setFontSize(12);
-      doc.text(`Page ${i + 1}`, margin, yOffset);
-      yOffset += 10;
+      const textLines = doc.splitTextToSize(storyPages[i], pageWidth - 2 * margin);
+      doc.text(textLines, margin, yOffset);
+      yOffset += textLines.length * 7 + 10; // Adjust spacing based on text height
 
       // Add image if available
       if (pageImages[i]) {
         try {
-          const img = new Image();
-          img.src = pageImages[i];
-          await new Promise((resolve) => {
-            img.onload = resolve;
-          });
-          const imgProps = doc.getImageProperties(img);
-          const imgWidth = maxWidth;
+          const imgData = pageImages[i];
+          const imgProps = await getImageDimensions(imgData);
+          const imgWidth = pageWidth - 2 * margin;
           const imgHeight = (imgProps.height * imgWidth) / imgProps.width;
+
           if (yOffset + imgHeight > pageHeight - margin) {
             doc.addPage();
             yOffset = margin;
           }
-          doc.addImage(img, "PNG", margin, yOffset, imgWidth, imgHeight);
+
+          doc.addImage(imgData, "JPEG", margin, yOffset, imgWidth, imgHeight);
           yOffset += imgHeight + 10;
         } catch (error) {
           console.error("Error adding image to PDF:", error);
         }
       }
-
-      // Add text
-      doc.setFontSize(10);
-      const textLines = doc.splitTextToSize(storyPages[i], maxWidth);
-      if (yOffset + textLines.length * 12 > pageHeight - margin) {
-        doc.addPage();
-        yOffset = margin;
-      }
-      doc.text(textLines, margin, yOffset);
-      yOffset += textLines.length * 12 + 10;
     }
 
-    // Save the PDF
     doc.save(`${selectedPrompt.title.replace(/[^a-zA-Z0-9]/g, "_")}.pdf`);
+  };
+
+  // Helper function to get image dimensions
+  const getImageDimensions = (imgData) => {
+    return new Promise((resolve, reject) => {
+      const img = new Image();
+      img.onload = () => resolve({ width: img.width, height: img.height });
+      img.onerror = reject;
+      img.src = imgData;
+    });
   };
 
   return (
@@ -247,7 +239,7 @@ export default function Home({ initialPrompts }) {
             <h1 className="text-2xl sm:text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-indigo-500 to-purple-600">
               Good Stories
             </h1>
-            {!selectedPrompt && (
+            {!selectedPrompt ? (
               <button
                 onClick={refreshPrompts}
                 disabled={isLoadingStory}
@@ -256,15 +248,22 @@ export default function Home({ initialPrompts }) {
                 <RefreshCw className={`w-4 h-4 mr-1.5 ${isLoadingStory ? "animate-spin" : ""}`} />
                 Refresh
               </button>
-            )}
-            {selectedPrompt && (
-              <button
-                onClick={backToPrompts}
-                className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
-              >
-                <ChevronLeft className="w-5 h-5 mr-1" />
-                All Prompts
-              </button>
+            ) : (
+              <div className="flex items-center gap-4">
+                <button
+                  onClick={backToPrompts}
+                  className="flex items-center text-indigo-600 hover:text-indigo-800 transition-colors"
+                >
+                  <ChevronLeft className="w-5 h-5 mr-1" />
+                  All Prompts
+                </button>
+                <button
+                  onClick={downloadAsPDF}
+                  className="flex items-center bg-indigo-600 text-white px-3 py-1.5 rounded-full hover:bg-indigo-700 transition-all text-sm shadow-md"
+                >
+                  Download PDF
+                </button>
+              </div>
             )}
           </div>
         </header>
@@ -330,15 +329,8 @@ export default function Home({ initialPrompts }) {
                 </div>
               ) : storyPages.length > 0 ? (
                 <div className="bg-white rounded-2xl shadow-md overflow-hidden">
-                  <div className="px-6 pt-6 pb-4 border-b border-gray-100 flex justify-between items-center">
+                  <div className="px-6 pt-6 pb-4 border-b border-gray-100">
                     <h2 className="text-xl font-bold text-gray-800 leading-tight">{selectedPrompt.title}</h2>
-                    <button
-                      onClick={downloadStoryAsPDF}
-                      className="flex items-center bg-indigo-600 text-white px-3 py-1.5 rounded-full hover:bg-indigo-700 transition-all text-sm shadow-md"
-                    >
-                      <Download className="w-4 h-4 mr-1.5" />
-                      Download PDF
-                    </button>
                   </div>
 
                   <div className="flex flex-col md:flex-row">
