@@ -3,13 +3,31 @@ import { ChevronLeft, ChevronRight, RefreshCw, BookOpen } from "lucide-react";
 import Head from "next/head";
 
 export async function getServerSideProps() {
-  const res = await fetch("http://localhost:3000/api/reddit-prompts");
-  const data = await res.json();
-  return {
-    props: {
-      initialPrompts: data.prompts || [],
-    },
-  };
+  try {
+    const res = await fetch("https://raw.githubusercontent.com/Libraula/goodstories/main/data/top.json", {
+      headers: {
+        "User-Agent": "GoodStories/0.1 (by /u/yourusername)", // Optional, good practice
+      },
+    });
+    if (!res.ok) throw new Error(`Fetch failed: ${res.status}`);
+    const data = await res.json();
+    const initialPrompts = data.data.children.map((child) => ({
+      id: child.data.id,
+      title: child.data.title,
+    }));
+    return {
+      props: {
+        initialPrompts,
+      },
+    };
+  } catch (error) {
+    console.error("Error in getServerSideProps:", error);
+    return {
+      props: {
+        initialPrompts: [],
+      },
+    };
+  }
 }
 
 export default function Home({ initialPrompts }) {
@@ -21,7 +39,6 @@ export default function Home({ initialPrompts }) {
   const [isLoadingStory, setIsLoadingStory] = useState(false);
   const [isLoadingImage, setIsLoadingImage] = useState(false);
   const [currentPromptPage, setCurrentPromptPage] = useState(0);
-  const [isLoadingMorePrompts, setIsLoadingMorePrompts] = useState(false);
 
   const PROMPTS_PER_PAGE = 12;
   const totalPromptPages = Math.ceil(prompts.length / PROMPTS_PER_PAGE);
@@ -30,35 +47,9 @@ export default function Home({ initialPrompts }) {
     (currentPromptPage + 1) * PROMPTS_PER_PAGE
   );
 
-  const loadMorePrompts = async () => {
-    if (isLoadingMorePrompts) return;
-
-    setIsLoadingMorePrompts(true);
-    try {
-      const response = await fetch(`/api/reddit-prompts?page=${currentPromptPage + 1}`);
-      const data = await response.json();
-
-      if (data.success && data.prompts.length > 0) {
-        setPrompts((prevPrompts) => {
-          const newPrompts = data.prompts.filter(
-            (newPrompt) => !prevPrompts.some((p) => p.id === newPrompt.id)
-          );
-          return [...prevPrompts, ...newPrompts];
-        });
-      }
-    } catch (error) {
-      console.error("Error loading more prompts:", error);
-    } finally {
-      setIsLoadingMorePrompts(false);
-    }
-  };
-
   const nextPromptPage = () => {
     if (currentPromptPage < totalPromptPages - 1) {
       setCurrentPromptPage((prev) => prev + 1);
-      if ((currentPromptPage + 1) * PROMPTS_PER_PAGE >= prompts.length - PROMPTS_PER_PAGE) {
-        loadMorePrompts();
-      }
     }
   };
 
@@ -142,13 +133,18 @@ export default function Home({ initialPrompts }) {
   const refreshPrompts = async () => {
     setIsLoadingStory(true);
     try {
-      const response = await fetch("/api/reddit-prompts?refresh=true");
+      const response = await fetch("https://raw.githubusercontent.com/Libraula/goodstories/main/data/top.json", {
+        headers: {
+          "User-Agent": "GoodStories/0.1 (by /u/yourusername)",
+        },
+      });
       const data = await response.json();
-
-      if (data.success) {
-        setPrompts(data.prompts);
-        setCurrentPromptPage(0);
-      }
+      const newPrompts = data.data.children.map((child) => ({
+        id: child.data.id,
+        title: child.data.title,
+      }));
+      setPrompts(newPrompts);
+      setCurrentPromptPage(0);
     } catch (error) {
       console.error("Error refreshing prompts:", error);
     } finally {
@@ -252,7 +248,7 @@ export default function Home({ initialPrompts }) {
                   </span>
                   <button
                     onClick={nextPromptPage}
-                    disabled={currentPromptPage >= totalPromptPages - 1 && !isLoadingMorePrompts}
+                    disabled={currentPromptPage >= totalPromptPages - 1}
                     className="p-2 bg-white rounded-full shadow-sm disabled:opacity-50 hover:bg-gray-50 transition-colors border border-gray-100 disabled:border-gray-50"
                     aria-label="Next page"
                   >
@@ -274,7 +270,7 @@ export default function Home({ initialPrompts }) {
                   <div className="px-6 pt-6 pb-4 border-b border-gray-100">
                     <h2 className="text-xl font-bold text-gray-800 leading-tight">{selectedPrompt.title}</h2>
                   </div>
-                  
+
                   <div className="flex flex-col md:flex-row">
                     {/* Image column */}
                     <div className="w-full md:w-1/2 md:border-r border-gray-100">
@@ -297,7 +293,7 @@ export default function Home({ initialPrompts }) {
                         )}
                       </div>
                     </div>
-                    
+
                     {/* Text column */}
                     <div className="w-full md:w-1/2 flex flex-col">
                       <div className="px-6 py-4 text-right text-xs text-gray-400 font-medium border-b border-gray-100">
@@ -308,7 +304,7 @@ export default function Home({ initialPrompts }) {
                           {storyPages[currentPage]}
                         </div>
                       </div>
-                      
+
                       <div className="flex justify-between items-center p-4 border-t border-gray-100 bg-gray-50">
                         <button
                           onClick={goToPreviousPage}
@@ -318,22 +314,22 @@ export default function Home({ initialPrompts }) {
                           <ChevronLeft className="w-4 h-4 mr-1" />
                           Previous
                         </button>
-                        
+
                         <div className="hidden sm:flex items-center space-x-2">
                           {storyPages.map((_, idx) => (
                             <button
                               key={idx}
                               onClick={() => setCurrentPage(idx)}
                               className={`w-2.5 h-2.5 rounded-full ${
-                                currentPage === idx 
-                                  ? "bg-indigo-500" 
+                                currentPage === idx
+                                  ? "bg-indigo-500"
                                   : "bg-gray-300 hover:bg-gray-400"
                               } transition-colors`}
                               aria-label={`Go to page ${idx + 1}`}
                             />
                           ))}
                         </div>
-                        
+
                         <button
                           onClick={goToNextPage}
                           disabled={currentPage === storyPages.length - 1}
